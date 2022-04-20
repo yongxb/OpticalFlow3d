@@ -19,6 +19,8 @@ dependencies = [
     "numpy>=1.17.0",
     "numba>=0.47.0",
     "scikit-image>=0.17.1",
+    "scipy>=1.6.3",
+    "tqdm>=4.50.0"
 ]
 
 if get_dist('cupy-cuda102') is None and get_dist('cupy-cuda110') is None and get_dist('cupy-cuda111') is None and \
@@ -28,8 +30,8 @@ if get_dist('cupy-cuda102') is None and get_dist('cupy-cuda110') is None and get
 
 setup(
     name='opticalflow3d',
-    version="0.1.0",
-    description='GPU optimized implementation of 3D Farneback two frame motion estimation algorithm',
+    version="0.2.0",
+    description='GPU/CUDA optimized implementation of 3D optical flow algorithms such as Farneback two frame motion estimation and Lucas Kanade dense optical flow algorithm',
     long_description=long_description,
     long_description_content_type='text/markdown',
     install_requires=dependencies,

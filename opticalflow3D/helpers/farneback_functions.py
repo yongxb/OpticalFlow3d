@@ -5,6 +5,7 @@ from numba import cuda
 import cupy as cp
 from cupyx.scipy import ndimage
 import cupyx
+from opticalflow3D.helpers.helpers import imresize_3d, gaussian_pyramid_3d
 
 
 def make_abc_fast(signal, spatial_size, sigma_k=0.15):
@@ -285,51 +286,16 @@ def update_flow(h0, h1, h2, g00, g01, g02, g11, g12, g22,
                           h0[z, y, x] * (g01[z, y, x] * g12[z, y, x] - g02[z, y, x] * g11[z, y, x])) / det
 
 
-def gaussian_kernel_1d(sigma, radius=None):
-    if radius is None:
-        radius = math.ceil(2 * sigma)
-
-    output_kernel = np.mgrid[-radius:radius + 1]
-    output_kernel = np.exp((-(1 / 2) * (output_kernel ** 2)) / (sigma ** 2))
-    output_kernel = output_kernel / np.sum(output_kernel)
-
-    return output_kernel
-
-
-def gaussian_pyramid_3d(image, sigma=1, scale=0.5):
-    kernel = cp.asarray(gaussian_kernel_1d(sigma), dtype=cp.float32)
-    radius = math.ceil(2 * sigma)
-
-    # gaussian smoothing
-    image = cupyx.scipy.ndimage.convolve(image, cp.reshape(kernel, (2 * radius + 1, 1, 1)), mode="reflect")
-    image = cupyx.scipy.ndimage.convolve(image, cp.reshape(kernel, (1, 2 * radius + 1, 1)), mode="reflect")
-    image = cupyx.scipy.ndimage.convolve(image, cp.reshape(kernel, (1, 1, 2 * radius + 1)), mode="reflect")
-
-    shape = image.shape
-    true_scale = [int(round(shape[0] * scale)) / shape[0],
-                  int(round(shape[1] * scale)) / shape[1],
-                  int(round(shape[2] * scale)) / shape[2]]
-    image_resized = cp.empty((int(round(shape[0] * scale)),
-                              int(round(shape[1] * scale)),
-                              int(round(shape[2] * scale))), dtype=cp.float32)
-    ndimage.zoom(image, (scale, scale, scale), output=image_resized, mode="reflect")
-
-    return image_resized, true_scale
-
-
-def imresize_3d(image, scale=(0.5, 0.5, 0.5)):
-    image = ndimage.zoom(image, (1 / scale[0], 1 / scale[1], 1 / scale[2]))
-
-    return image
-
-
 def farneback_3d(image_1, image_2, iters, num_levels,
                  scale=0.5, kernelsize=9, sigma_k=0.15, filter_type="box", filter_size=5,
                  presmoothing=None, threadsperblock=(8, 8, 8)):
+    assert filter_type.lower() in ["gaussian", "box"]
     if filter_type.lower() == "gaussian":
-        filter_fn = lambda x: cupyx.scipy.ndimage.gaussian_filter(x, filter_size / 2 * 0.3)
-    else:
-        filter_fn = lambda x: cupyx.scipy.ndimage.uniform_filter(x, size=filter_size)
+        def filter_fn(x):
+            return cupyx.scipy.ndimage.gaussian_filter(x, filter_size / 2 * 0.3)
+    elif filter_type.lower() == "box":
+        def filter_fn(x):
+            return cupyx.scipy.ndimage.uniform_filter(x, size=filter_size)
 
     image_1 = cp.asarray(image_1)
     image_2 = cp.asarray(image_2)
@@ -428,35 +394,3 @@ def farneback_3d(image_1, image_2, iters, num_levels,
 
             cp.cuda.Stream.null.synchronize()
     return vx, vy, vz, error
-
-
-def get_positions(start_point, total_vol, vol, shape, overlap, n):
-    q, r = divmod(total_vol[n], vol[n] - overlap[n])
-    position = []
-    valid_vol = []
-    valid_position = []
-
-    count = q + (r != 0)
-    for i in range(count):
-        if i == 0:
-            start = start_point[n] - overlap[n] // 2
-            valid_start = 0
-        else:
-            start = end - overlap[n]
-            valid_start = valid_end
-        end = start + vol[n]
-
-        _start = max(start, 0)
-        start_diff = start - _start
-        start_valid = overlap[n] // 2 + start_diff
-
-        _end = min((end, shape[n], start_point[n] + total_vol[n] + overlap[n] // 2))
-        valid_end = min((end - overlap[n] // 2 - start_point[n], total_vol[n]))
-
-        end_valid = valid_end - valid_start + start_valid
-
-        position.append((_start, _end))
-        valid_position.append((valid_start, valid_end))
-        valid_vol.append((start_valid, end_valid))
-
-    return position, valid_position, valid_vol
