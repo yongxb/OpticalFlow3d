@@ -297,8 +297,8 @@ def farneback_3d(image_1, image_2, iters, num_levels,
         def filter_fn(x):
             return cupyx.scipy.ndimage.uniform_filter(x, size=filter_size)
 
-    image_1 = cp.asarray(image_1)
-    image_2 = cp.asarray(image_2)
+    image_1 = cp.asarray(image_1, dtype=cp.float32)
+    image_2 = cp.asarray(image_2, dtype=cp.float32)
     if presmoothing is not None:
         image_1 = cupyx.scipy.ndimage.gaussian_filter(image_1, presmoothing)
         image_2 = cupyx.scipy.ndimage.gaussian_filter(image_2, presmoothing)

@@ -250,8 +250,8 @@ def pyrlk_3d(image_1, image_2,
              tau=0.1, alpha=0.1,
              filter_type="gaussian", filter_size=15,
              presmoothing=3, threadsperblock=(8, 8, 8)):
-    image_1 = cp.asarray(image_1)
-    image_2 = cp.asarray(image_2)
+    image_1 = cp.asarray(image_1, dtype=cp.float32)
+    image_2 = cp.asarray(image_2, dtype=cp.float32)
 
     if presmoothing is not None:
         image_1 = cupyx.scipy.ndimage.gaussian_filter(image_1, presmoothing)

@@ -31,7 +31,7 @@ if get_dist('cupy-cuda102') is None and get_dist('cupy-cuda110') is None and get
 setup(
     name='opticalflow3d',
     version="0.2.0",
-    description='GPU/CUDA optimized implementation of 3D optical flow algorithms such as Farneback two frame motion estimation and Lucas Kanade dense optical flow algorithm',
+    description='GPU/CUDA optimized implementation of 3D optical flow algorithms such as Farneback two frame motion estimation and Lucas Kanade dense optical flow algorithms',
     long_description=long_description,
     long_description_content_type='text/markdown',
     install_requires=dependencies,
