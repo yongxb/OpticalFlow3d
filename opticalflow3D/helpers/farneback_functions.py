@@ -6,10 +6,50 @@ import cupy as cp
 from cupyx.scipy import ndimage
 import cupyx
 from opticalflow3D.helpers.helpers import imresize_3d, gaussian_pyramid_3d
+import numpy.typing as npt
 
 
-def make_abc_fast(signal, spatial_size, sigma_k=0.15):
+# TODO update typing when cupy v11 is out
+def make_abc_fast(signal,
+                  spatial_size: int = 9,
+                  sigma_k: float = 0.15):
+    """Calculates the polynomial expansion coefficients
+
+    Args:
+        signal: array containing the pixel values of the 3D image.
+        spatial_size (int): size of the support used in the calculation of the standard deviation of the Gaussian
+            applicability. Defaults to 9.
+        sigma_k (float): scaling factor used to calculate the standard deviation of the Gaussian applicability. The
+            formula to calculate sigma is sigma_k*(spatial_size - 1). Defaults to 0.15.
+
+    Returns:
+        Returns the A array in this format as it is symmetrical. This saves memory space.
+        a = [[a_00, a_01, a_02],
+             [a_01, a_11, a_12],
+             [a_02, a_12, a_22]]
+
+        Returns the B array in this format.
+        b = [[b_0],
+             [b_1],
+             [b_2]]
+
+        b_0 (cuda array): array containing the first value of the B array
+        b_1 (cuda array): array containing the second value of the B array
+        b_2 (cuda array): array containing the third value of the B array
+        a_00 (cuda array): array containing the values of the A array
+        a_01 (cuda array): array containing the values of the A array
+        a_02 (cuda array): array containing the values of the A array
+        a_11 (cuda array): array containing the values of the A array
+        a_12 (cuda array): array containing the values of the A array
+        a_22 (cuda array): array containing the values of the A array
+
+    Raises:
+        AssertionError: signal must be array with 3 dimensions
+    """
     # spatial_size = spatial_size | 1 # ensure the value is odd
+    if signal.ndim != 3:
+        raise AssertionError("signal must be array with 3 dimensions")
+
     sigma = sigma_k * (spatial_size - 1)
 
     n = int((spatial_size - 1) / 2)
@@ -86,6 +126,52 @@ def update_matrices(b1_0, b1_1, b1_2, a1_00, a1_01, a1_02, a1_11, a1_12, a1_22,
                     b2_0, b2_1, b2_2, a2_00, a2_01, a2_02, a2_11, a2_12, a2_22,
                     vx, vy, vz, border,
                     h0, h1, h2, g00, g01, g02, g11, g12, g22):
+    """Sets up the matrices that can be used to solve for the velocities
+
+        Matrices are in the format [[g00, g01, g02], and [[h0],
+                                    [g01, g11, g12],      [h1],
+                                    [g02, g12, g22]]      [h2]]
+        Matrices are updated in place.
+
+    Args:
+        b1_0 (cuda array): array containing the first value of the B array from the first image
+        b1_1 (cuda array): array containing the second value of the B array from the first image
+        b1_2 (cuda array): array containing the third value of the B array from the first image
+        a1_00 (cuda array): array containing the values of the A array from the first image
+        a1_01 (cuda array): array containing the values of the A array from the first image
+        a1_02 (cuda array): array containing the values of the A array from the first image
+        a1_11 (cuda array): array containing the values of the A array from the first image
+        a1_12 (cuda array): array containing the values of the A array from the first image
+        a1_22 (cuda array): array containing the values of the A array from the first image
+
+        b2_0 (cuda array): array containing the first value of the B array from the second image
+        b2_1 (cuda array): array containing the second value of the B array from the second image
+        b2_2 (cuda array): array containing the third value of the B array from the second image
+        a2_00 (cuda array): array containing the values of the A array from the second image
+        a2_01 (cuda array): array containing the values of the A array from the second image
+        a2_02 (cuda array): array containing the values of the A array from the second image
+        a2_11 (cuda array): array containing the values of the A array from the second image
+        a2_12 (cuda array): array containing the values of the A array from the second image
+        a2_22 (cuda array): array containing the values of the A array from the second image
+
+        vx (cuda array): array containing the displacements in the x direction
+        vy (cuda array): array containing the displacements in the y direction
+        vz (cuda array): array containing the displacements in the z direction
+        border (cuda array): array containing the weighting factor to use for calculations near the border
+
+        h0 (cuda array): array containing the first value of the h matrix
+        h1 (cuda array): array containing the second value of the h matrix
+        h2 (cuda array): array containing the third value of the h matrix
+        g00 (cuda array): array containing the values of the g matrix
+        g01 (cuda array): array containing the values of the g matrix
+        g02 (cuda array): array containing the values of the g matrix
+        g11 (cuda array): array containing the values of the g matrix
+        g12 (cuda array): array containing the values of the g matrix
+        g22 (cuda array): array containing the values of the g matrix
+
+    Returns:
+        None
+    """
     z, y, x = cuda.grid(3)
 
     r = cuda.local.array(shape=(9,), dtype=np.float32)
@@ -247,48 +333,121 @@ def update_matrices(b1_0, b1_1, b1_2, a1_00, a1_01, a1_02, a1_11, a1_12, a1_22,
 
 
 @cuda.jit
-def calculate_error(h0, h1, h2, g00, g01, g02, g11, g12, g22,
-                    flowx, flowy, flowz, error):
+def calculate_confidence(h0, h1, h2, g00, g01, g02, g11, g12, g22,
+                         vx, vy, vz, confidence):
+    """ Calculates the confidence of the Farneback algorithm. Smaller values indicate that the algorithm is more confident.
+
+        Matrices are in the format [[g00, g01, g02], and [[h0],
+                                    [g01, g11, g12],      [h1],
+                                    [g02, g12, g22]]      [h2]]
+
+    Args:
+        h0 (cuda array): array containing the first value of the h matrix
+        h1 (cuda array): array containing the second value of the h matrix
+        h2 (cuda array): array containing the third value of the h matrix
+        g00 (cuda array): array containing the values of the g matrix
+        g01 (cuda array): array containing the values of the g matrix
+        g02 (cuda array): array containing the values of the g matrix
+        g11 (cuda array): array containing the values of the g matrix
+        g12 (cuda array): array containing the values of the g matrix
+        g22 (cuda array): array containing the values of the g matrix
+
+        vx (cuda array): array containing the displacements in the x direction
+        vy (cuda array): array containing the displacements in the y direction
+        vz (cuda array): array containing the displacements in the z direction
+        confidence (cuda array): array containing the calculated confidence of the Farneback algorithm
+
+    Returns:
+        None
+    """
     z, y, x = cuda.grid(3)
 
-    depth, length, width = flowx.shape
+    depth, length, width = vx.shape
 
     if z < depth and y < length and x < width:
-        error[z, y, x] = (h0[z, y, x] ** 2 + h1[z, y, x] ** 2 + h2[z, y, x] ** 2) - \
-                         (flowx[z, y, x] * (g00[z, y, x] * h0[z, y, x] + g01[z, y, x] * h1[z, y, x] + g02[z, y, x] * h2[z, y, x]) +
-                          flowy[z, y, x] * (g01[z, y, x] * h0[z, y, x] + g11[z, y, x] * h1[z, y, x] + g12[z, y, x] * h2[z, y, x]) +
-                          flowz[z, y, x] * (g02[z, y, x] * h0[z, y, x] + g12[z, y, x] * h1[z, y, x] + g22[z, y, x] * h2[z, y, x]))
+        confidence[z, y, x] = (h0[z, y, x] ** 2 + h1[z, y, x] ** 2 + h2[z, y, x] ** 2) - \
+                              (vx[z, y, x] * (g00[z, y, x] * h0[z, y, x] + g01[z, y, x] * h1[z, y, x] + g02[z, y, x] * h2[
+                             z, y, x]) +
+                          vy[z, y, x] * (g01[z, y, x] * h0[z, y, x] + g11[z, y, x] * h1[z, y, x] + g12[z, y, x] * h2[
+                                     z, y, x]) +
+                          vz[z, y, x] * (g02[z, y, x] * h0[z, y, x] + g12[z, y, x] * h1[z, y, x] + g22[z, y, x] * h2[
+                                     z, y, x]))
 
 
 @cuda.jit
 def update_flow(h0, h1, h2, g00, g01, g02, g11, g12, g22,
-                  flowx, flowy, flowz):
-    # M is in format [[g00, g01, g02], and [[h0],
-    #                 [g01, g11, g12],      [h1],
-    #                 [g02, g12, g22]]      [h2]]
+                vx, vy, vz):
+    """ Updates the displacements using the calculated matrices.
+
+        Matrices are in the format [[g00, g01, g02], and [[h0],
+                                    [g01, g11, g12],      [h1],
+                                    [g02, g12, g22]]      [h2]]
+
+    Args:
+        h0 (cuda array): array containing the first value of the h matrix
+        h1 (cuda array): array containing the second value of the h matrix
+        h2 (cuda array): array containing the third value of the h matrix
+        g00 (cuda array): array containing the values of the g matrix
+        g01 (cuda array): array containing the values of the g matrix
+        g02 (cuda array): array containing the values of the g matrix
+        g11 (cuda array): array containing the values of the g matrix
+        g12 (cuda array): array containing the values of the g matrix
+        g22 (cuda array): array containing the values of the g matrix
+
+        vx (cuda array): array containing the displacements in the x direction
+        vy (cuda array): array containing the displacements in the y direction
+        vz (cuda array): array containing the displacements in the z direction
+
+    Returns:
+        None
+    """
     z, y, x = cuda.grid(3)
 
-    depth, length, width = flowx.shape
+    depth, length, width = vx.shape
 
     if z < depth and y < length and x < width:
         det = g00[z, y, x] * (g11[z, y, x] * g22[z, y, x] - g12[z, y, x] * g12[z, y, x]) - \
               g01[z, y, x] * (g01[z, y, x] * g22[z, y, x] - g02[z, y, x] * g12[z, y, x]) + \
               g02[z, y, x] * (g01[z, y, x] * g12[z, y, x] - g02[z, y, x] * g11[z, y, x])
 
-        flowx[z, y, x] = (h0[z, y, x] * (g11[z, y, x] * g22[z, y, x] - g12[z, y, x] * g12[z, y, x]) -
-                          g01[z, y, x] * (h1[z, y, x] * g22[z, y, x] - h2[z, y, x] * g12[z, y, x]) +
-                          g02[z, y, x] * (h1[z, y, x] * g12[z, y, x] - h2[z, y, x] * g11[z, y, x])) / det
-        flowy[z, y, x] = (g00[z, y, x] * (h1[z, y, x] * g22[z, y, x] - h2[z, y, x] * g12[z, y, x]) -
-                          h0[z, y, x] * (g01[z, y, x] * g22[z, y, x] - g02[z, y, x] * g12[z, y, x]) +
-                          g02[z, y, x] * (g01[z, y, x] * h2[z, y, x] - g02[z, y, x] * h1[z, y, x])) / det
-        flowz[z, y, x] = (g00[z, y, x] * (g11[z, y, x] * h2[z, y, x] - g12[z, y, x] * h1[z, y, x]) -
-                          g01[z, y, x] * (g01[z, y, x] * h2[z, y, x] - g02[z, y, x] * h1[z, y, x]) +
-                          h0[z, y, x] * (g01[z, y, x] * g12[z, y, x] - g02[z, y, x] * g11[z, y, x])) / det
+        vx[z, y, x] = (h0[z, y, x] * (g11[z, y, x] * g22[z, y, x] - g12[z, y, x] * g12[z, y, x]) -
+                       g01[z, y, x] * (h1[z, y, x] * g22[z, y, x] - h2[z, y, x] * g12[z, y, x]) +
+                       g02[z, y, x] * (h1[z, y, x] * g12[z, y, x] - h2[z, y, x] * g11[z, y, x])) / det
+        vy[z, y, x] = (g00[z, y, x] * (h1[z, y, x] * g22[z, y, x] - h2[z, y, x] * g12[z, y, x]) -
+                       h0[z, y, x] * (g01[z, y, x] * g22[z, y, x] - g02[z, y, x] * g12[z, y, x]) +
+                       g02[z, y, x] * (g01[z, y, x] * h2[z, y, x] - g02[z, y, x] * h1[z, y, x])) / det
+        vz[z, y, x] = (g00[z, y, x] * (g11[z, y, x] * h2[z, y, x] - g12[z, y, x] * h1[z, y, x]) -
+                       g01[z, y, x] * (g01[z, y, x] * h2[z, y, x] - g02[z, y, x] * h1[z, y, x]) +
+                       h0[z, y, x] * (g01[z, y, x] * g12[z, y, x] - g02[z, y, x] * g11[z, y, x])) / det
 
 
-def farneback_3d(image_1, image_2, iters, num_levels,
-                 scale=0.5, kernelsize=9, sigma_k=0.15, filter_type="box", filter_size=5,
-                 presmoothing=None, threadsperblock=(8, 8, 8)):
+def farneback_3d(image1, image2, iters: int, num_levels: int,
+                 scale: float = 0.5, spatial_size: int = 9, sigma_k: float = 0.15,
+                 filter_type: str = "box", filter_size: int = 5,
+                 presmoothing: int = None, threadsperblock: npt.ArrayLike[float, float, float] = (8, 8, 8)):
+    """ Estimates the displacement across image1 and image2 using the 3D Farneback two frame algorithm
+
+    Args:
+        image1 (cuda array): first image
+        image2 (cuda array): second image
+        iters (int): number of iterations
+        num_levels (int): number of pyramid levels
+        scale (float): Scaling factor used to generate the pyramid levels. Defaults to 0.5
+        spatial_size (int): size of the support used in the calculation of the standard deviation of the Gaussian
+            applicability. Defaults to 9.
+        sigma_k (float): scaling factor used to calculate the standard deviation of the Gaussian applicability. The
+            formula to calculate sigma is sigma_k*(spatial_size - 1). Defaults to 0.15.
+        filter_type (int): Defines the type of filter used to average the calculated matrices. Defaults to "box"
+        filter_size (int): Size of the filter used to average the matrices. Defaults to 5
+        presmoothing (int): Standard deviation used to perform Gaussian smoothing of the images. Defaults to None
+        threadsperblock (npt.ArrayLike[float, float, float]): Defines the number of cuda threads. Defaults to (8, 8, 8)
+
+    Returns:
+        vx (cuda array): array containing the displacements in the x direction
+        vy (cuda array): array containing the displacements in the y direction
+        vz (cuda array): array containing the displacements in the z direction
+        confidence (cuda array): array containing the calculated confidence of the Farneback algorithm
+    """
     assert filter_type.lower() in ["gaussian", "box"]
     if filter_type.lower() == "gaussian":
         def filter_fn(x):
@@ -297,20 +456,20 @@ def farneback_3d(image_1, image_2, iters, num_levels,
         def filter_fn(x):
             return cupyx.scipy.ndimage.uniform_filter(x, size=filter_size)
 
-    image_1 = cp.asarray(image_1, dtype=cp.float32)
-    image_2 = cp.asarray(image_2, dtype=cp.float32)
+    image1 = cp.asarray(image1, dtype=cp.float32)
+    image2 = cp.asarray(image2, dtype=cp.float32)
     if presmoothing is not None:
-        image_1 = cupyx.scipy.ndimage.gaussian_filter(image_1, presmoothing)
-        image_2 = cupyx.scipy.ndimage.gaussian_filter(image_2, presmoothing)
+        image1 = cupyx.scipy.ndimage.gaussian_filter(image1, presmoothing)
+        image2 = cupyx.scipy.ndimage.gaussian_filter(image2, presmoothing)
 
     # initialize gaussian pyramid
-    gauss_pyramid_1 = {1: image_1}
-    gauss_pyramid_2 = {1: image_2}
+    gauss_pyramid_1 = {1: image1}
+    gauss_pyramid_2 = {1: image2}
     true_scale_dict = {}
     for pyr_lvl in range(1, num_levels + 1):
         if pyr_lvl == 1:
-            gauss_pyramid_1 = {pyr_lvl: image_1}
-            gauss_pyramid_2 = {pyr_lvl: image_2}
+            gauss_pyramid_1 = {pyr_lvl: image1}
+            gauss_pyramid_2 = {pyr_lvl: image2}
         else:
             gauss_pyramid_1[pyr_lvl], true_scale_dict[pyr_lvl] = gaussian_pyramid_3d(gauss_pyramid_1[pyr_lvl - 1],
                                                                                      sigma=1, scale=scale)
@@ -336,18 +495,18 @@ def farneback_3d(image_1, image_2, iters, num_levels,
             vy[cp.isnan(vy)] = 0
             vz[cp.isnan(vz)] = 0
 
-            vx[cp.abs(error) > 1] = 0
-            vy[cp.abs(error) > 1] = 0
-            vz[cp.abs(error) > 1] = 0
-            del error
+            vx[cp.abs(confidence) > 1] = 0
+            vy[cp.abs(confidence) > 1] = 0
+            vz[cp.abs(confidence) > 1] = 0
+            del confidence
 
             vx = 1 / true_scale_dict[lvl + 1][2] * imresize_3d(vx, scale=true_scale_dict[lvl + 1])
             vy = 1 / true_scale_dict[lvl + 1][1] * imresize_3d(vy, scale=true_scale_dict[lvl + 1])
             vz = 1 / true_scale_dict[lvl + 1][0] * imresize_3d(vz, scale=true_scale_dict[lvl + 1])
 
-        b1_0, b1_1, b1_2, a1_00, a1_01, a1_02, a1_11, a1_12, a1_22 = make_abc_fast(lvl_image_1, kernelsize,
+        b1_0, b1_1, b1_2, a1_00, a1_01, a1_02, a1_11, a1_12, a1_22 = make_abc_fast(lvl_image_1, spatial_size,
                                                                                    sigma_k=sigma_k)
-        b2_0, b2_1, b2_2, a2_00, a2_01, a2_02, a2_11, a2_12, a2_22 = make_abc_fast(lvl_image_2, kernelsize,
+        b2_0, b2_1, b2_2, a2_00, a2_01, a2_02, a2_11, a2_12, a2_22 = make_abc_fast(lvl_image_2, spatial_size,
                                                                                    sigma_k=sigma_k)
 
         border = cp.asarray([0.14, 0.14, 0.4472, 0.4472, 0.4472, 1], dtype=cp.float32)
@@ -389,8 +548,9 @@ def farneback_3d(image_1, image_2, iters, num_levels,
             cp.cuda.Stream.null.synchronize()
 
             if i == iters[lvl - 1] - 1:
-                error = cp.zeros(vx.shape, dtype=cp.float32)
-                calculate_error[blockspergrid, threadsperblock](h0, h1, h2, g00, g01, g02, g11, g12, g22, vx, vy, vz, error)
+                confidence = cp.zeros(vx.shape, dtype=cp.float32)
+                calculate_confidence[blockspergrid, threadsperblock](h0, h1, h2, g00, g01, g02, g11, g12, g22, vx, vy, vz,
+                                                                     confidence)
 
             cp.cuda.Stream.null.synchronize()
-    return vx, vy, vz, error
+    return vx, vy, vz, confidence

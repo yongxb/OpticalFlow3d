@@ -1,3 +1,7 @@
+import typing
+from typing import Tuple, List, Union, Any
+
+import numpy.typing as npt
 import skimage.io
 import numpy as np
 import math
@@ -8,7 +12,16 @@ from numba import njit, prange
 import scipy.ndimage
 
 
-def gaussian_kernel_1d(sigma, radius=None):
+def gaussian_kernel_1d(sigma: float, radius: int = None) -> np.ArrayLike:
+    """ Generates a 1d kernel that can be used to perform Gaussian smoothing
+
+    Args:
+        sigma (float): Standard deviation of the Gaussian kernel
+        radius (int): Size of the Gaussian kernel. Final size is equal to 2*radius+1. Defaults to None
+
+    Returns:
+        output_kernel (ndarray): 1d Guassian kernel
+    """
     if radius is None:
         radius = math.ceil(2 * sigma)
 
@@ -19,7 +32,19 @@ def gaussian_kernel_1d(sigma, radius=None):
     return output_kernel
 
 
-def gaussian_pyramid_3d(image, sigma=1, scale=0.5):
+def gaussian_pyramid_3d(image, sigma: float = 1, scale: float = 0.5) -> typing.Tuple[np.ndarray, npt.ArrayLike]:
+    """ Downscales the image for use in a Gaussian pyramid
+
+    Args:
+        image (cuda array): Image to generate pyramids from
+        sigma (float): Standard deviation of the Gaussian kernel used for downscaling. Defaults to 1
+        scale (float): Scale factor used to downscale the image. Defaults to 0.5.
+
+    Returns:
+        resized_image (ndarray): Downscaled image
+        true_scale (npt.ArrayLike[float, float, float]): Actual scaling factor used. This differs slightly from the input
+            scaling factor in cases when the factor used causes the size of the image to not be an integer.
+    """
     kernel = cp.asarray(gaussian_kernel_1d(sigma), dtype=cp.float32)
     radius = math.ceil(2 * sigma)
 
@@ -32,22 +57,57 @@ def gaussian_pyramid_3d(image, sigma=1, scale=0.5):
     true_scale = [int(round(shape[0] * scale)) / shape[0],
                   int(round(shape[1] * scale)) / shape[1],
                   int(round(shape[2] * scale)) / shape[2]]
-    image_resized = cp.empty((int(round(shape[0] * scale)),
+    resized_image = cp.empty((int(round(shape[0] * scale)),
                               int(round(shape[1] * scale)),
                               int(round(shape[2] * scale))), dtype=cp.float32)
-    ndimage.zoom(image, (scale, scale, scale), output=image_resized, mode="reflect")
+    ndimage.zoom(image, (scale, scale, scale), output=resized_image, mode="reflect")
 
-    return image_resized, true_scale
+    return resized_image, true_scale
 
 
-def imresize_3d(image, scale=(0.5, 0.5, 0.5)):
+def imresize_3d(image, scale: npt.ArrayLike[float, float, float] = (0.5, 0.5, 0.5)) -> np.ndarray:
+    """ Upscales the image by the specified factor
+
+    Args:
+        image (cuda array): image to generate pyramids from
+        scale (npt.ArrayLike[float, float, float]): Scale factor used to downscale the image. Actual factor used is 1/scale.
+            Defaults to (0.5, 0.5, 0.5).
+
+    Returns:
+        image (ndarray): Upscaled image
+    """
     image = ndimage.zoom(image, (1 / scale[0], 1 / scale[1], 1 / scale[2]))
 
     return image
 
 
-def get_positions(start_point, total_vol, vol, shape, overlap, n):
-    q, r = divmod(total_vol[n], vol[n] - overlap[n])
+def get_positions(start_point: typing.Tuple[int, int, int],
+                  total_vol: typing.Tuple[int, int, int],
+                  vol: typing.Tuple[int, int, int],
+                  shape: typing.Tuple[int, int, int],
+                  overlap: typing.Tuple[int, int, int],
+                  axis: int) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]], List[Tuple[int, int]]]:
+    """ Calculates the starting positions of the subvolumes
+
+    This breaks a large volume that is too large to be analysed in one go into smaller subvolumes.
+    If any one of the values in overlap is greater than 0, the subvolumes will include regions outside the region of
+    interest. This helps to minimize any edge effects. When the subvolumes are merged back these extra regions will
+    be removed.
+
+    Args:
+        start_point (typing.Tuple[int, int, int]): starting position of the region of interest in the image volume
+        total_vol (typing.Tuple[int, int, int]): total size of the region of interest
+        vol (typing.Tuple[int, int, int]): maximum volume size that can be analysed at one go
+        shape (typing.Tuple[int, int, int]): size of the image volume
+        overlap (typing.Tuple[int, int, int]): amount of overlap between adjacent subvolumes
+        axis (int): axis to calculate the positions from
+
+    Returns:
+        position (List[Tuple[int, int]]): starting and ending position along the specified axis to generate the subvolume
+        valid_position (List[Tuple[int, int]]): starting and ending position of the final displacement field that should be merged
+        valid_vol (List[Tuple[int, int]]): starting and ending position of the subvolume displacement field that should be merged
+    """
+    q, r = divmod(total_vol[axis], vol[axis] - overlap[axis])
     position = []
     valid_vol = []
     valid_position = []
@@ -55,19 +115,19 @@ def get_positions(start_point, total_vol, vol, shape, overlap, n):
     count = q + (r != 0)
     for i in range(count):
         if i == 0:
-            start = start_point[n] - overlap[n] // 2
+            start = start_point[axis] - overlap[axis] // 2
             valid_start = 0
         else:
-            start = end - overlap[n]
+            start = end - overlap[axis]
             valid_start = valid_end
-        end = start + vol[n]
+        end = start + vol[axis]
 
         _start = max(start, 0)
         start_diff = start - _start
-        start_valid = overlap[n] // 2 + start_diff
+        start_valid = overlap[axis] // 2 + start_diff
 
-        _end = min((end, shape[n], start_point[n] + total_vol[n] + overlap[n] // 2))
-        valid_end = min((end - overlap[n] // 2 - start_point[n], total_vol[n]))
+        _end = min((end, shape[axis], start_point[axis] + total_vol[axis] + overlap[axis] // 2))
+        valid_end = min((end - overlap[axis] // 2 - start_point[axis], total_vol[axis]))
 
         end_valid = valid_end - valid_start + start_valid
 
@@ -78,18 +138,48 @@ def get_positions(start_point, total_vol, vol, shape, overlap, n):
     return position, valid_position, valid_vol
 
 
-def load_image(arg, axis=0):
-    if type(arg) == list:
+def load_image(path: typing.Union[str, list], axis: int = 0) -> np.ndarray:
+    """ Loads the image
+
+    If the input is a list of file paths, each file path is loaded and the images are concatenated into a single image.
+    If the input is a file path, the file path is loaded and the image is returned.
+
+    Args:
+        path (typing.Union[list, str]): List or single file path that contains the images to load.
+        axis (int): Axis used to concatenate the images. Only used if path is a list of file paths.
+
+    Returns:
+        image (ndarray): Loaded image
+    """
+    if type(path) == list:
         images = []
-        for file in arg:
+        for file in path:
             images.append(skimage.io.imread(file))
         return np.concatenate(images, axis=axis)
     else:
-        return skimage.io.imread(arg)
+        return skimage.io.imread(path)
 
 
-def realign_image(image, z_reverse=True, z_start=None, z_end=None,
-                  y_start=None, y_end=None, x_start=None, x_end=None):
+def crop_image(image: np.ndarray,
+               z_reverse: bool = True,
+               z_start: typing.Union[int, None] = None, z_end: typing.Union[int, None] = None,
+               y_start: typing.Union[int, None] = None, y_end: typing.Union[int, None] = None,
+               x_start: typing.Union[int, None] = None, x_end: typing.Union[int, None] = None) -> np.ndarray:
+    """ Crops the image to facilitate realignment
+
+    Args:
+        image (np.ndarray): Image to crop
+        z_reverse (bool): Option to determine if the slices in the z axis should be reversed. Defaults to True.
+        z_start (typing.Union[int, None]): Amount to crop from the start of the z axis. Defaults to None.
+        z_end (typing.Union[int, None]): Amount to crop from the end of the z axis. Defaults to None.
+        y_start (typing.Union[int, None]): Amount to crop from the start of the y axis. Defaults to None.
+        y_end (typing.Union[int, None]): Amount to crop from the end of the y axis. Defaults to None.
+        x_start (typing.Union[int, None]): Amount to crop from the start of the x axis. Defaults to None.
+        x_end (typing.Union[int, None]): Amount to crop from the end of the x axis. Defaults to None.
+
+    Returns:
+        _image (np.ndarray): cropped image
+    """
     _z_start = z_start if z_start else 0
     _z_end = z_end if z_end else image.shape[0]
 
@@ -107,15 +197,49 @@ def realign_image(image, z_reverse=True, z_start=None, z_end=None,
     return _image
 
 
-def save_flow(path, vz, vy, vx):
+def save_displacements(path: str, vz: np.ndarray, vy: np.ndarray, vx: np.ndarray) -> None:
+    """ Saves the displacement as the binary uncompressed .npz format
+
+    Args:
+        path (str): File path to save the displacements. The extension type should be *.npz
+        vx (np.ndarray): Array containing the displacements in the x direction
+        vy (np.ndarray): Array containing the displacements in the y direction
+        vz (np.ndarray): Array containing the displacements in the z direction
+
+    Returns:
+        None
+    """
     np.savez(path, vx=vx, vy=vy, vz=vz)
 
 
-def save_error(path, error):
-    np.savez(path, error=error)
+def save_confidence(path: str, confidence: np.ndarray) -> None:
+    """ Saves the displacement as the binary uncompressed .npz format
+
+    Args:
+        path (str): File path to save the displacements. The extension type should be *.npz
+        confidence (np.ndarray): Array containing the calculated confidence of the Farneback algorithm
+
+    Returns:
+        None
+    """
+    np.savez(path, confidence=confidence)
 
 
-def generate_inverse_image(image, vx, vy, vz, use_gpu=True):
+def generate_inverse_image(image, vx, vy, vz, use_gpu: bool = True) -> np.ndarray:
+    """ Uses the displacements to transform the image
+
+    This transformed image can then be overlaid over the actual image to verify the quality of the displacements.
+
+    Args:
+        image (np.ndarray): File path to save the displacements. The extension type should be *.npz
+        vx (np.ndarray): Array containing the displacements in the x direction
+        vy (np.ndarray): Array containing the displacements in the y direction
+        vz (np.ndarray): Array containing the displacements in the z direction
+        use_gpu (bool): Option to run some part of the procedure on the gpu
+
+    Returns:
+        inverse_image (np.ndarray): transformed image using the displacemennt field
+    """
     # image should be the first image that is used for the optical flow calculations
     map_x_inverse, map_y_inverse, map_z_inverse, distance_total = inverse(vx, vy, vz)
 
