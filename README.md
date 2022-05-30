@@ -28,7 +28,7 @@ The RMSE for the x component of the displacement field was 0.0112. The figure be
 The solid blue line represents the mean magnitude of the x component for each x position while the shaded 
 region/thin blue shows the standard deviation of the x component magnitudes.
 
-<img src="docs/images/accuracy.png" width="700"/>
+<img src="https://gitlab.com/xianbin.yong13/opticalflow3d/-/raw/master/docs/images/accuracy.png" width="700"/>
 
 ### Execution time
 The time taken to compute the displacements for a 2048×192×192 voxel image was **2.41s ± 21.4ms**. The computation was 
