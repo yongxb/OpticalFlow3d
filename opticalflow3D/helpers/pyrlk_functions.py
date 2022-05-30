@@ -1,12 +1,13 @@
-import cupy as cp
 import math
+import typing
 from math import sqrt, cos, acos, pi
 
-from numba import cuda, float32
-from cupyx.scipy import ndimage
+import cupy as cp
 import cupyx
+from cupyx.scipy import ndimage
+from numba import cuda, float32
+
 from opticalflow3D.helpers.helpers import imresize_3d, gaussian_pyramid_3d
-import numpy.typing as npt
 
 
 ##################################
@@ -194,6 +195,7 @@ def eig_value(A, B):
         phi = acos(r) / 3
 
     return q + 2 * p * cos(phi + (2 * pi / 3))
+
 
 ##################################
 # 3D Lucas Kanade Functions
@@ -406,7 +408,7 @@ def pyrlk_3d(image1, image2, iters: int, num_levels: int,
              scale: float = 0.5,
              tau: float = 0.1, alpha: float = 0.1,
              filter_type: str = "gaussian", filter_size: int = 15,
-             presmoothing: int = None, threadsperblock: npt.ArrayLike[float, float, float] = (8, 8, 8)):
+             presmoothing: int = None, threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8)):
     """ Implementation of Pyramidal Lucas Kanade for 3D images
 
     Args:
@@ -420,7 +422,7 @@ def pyrlk_3d(image1, image2, iters: int, num_levels: int,
         filter_type (int): Defines the type of filter used to average the calculated matrices. Defaults to "box"
         filter_size (int): Size of the filter used to average the matrices. Defaults to 15
         presmoothing (int): Standard deviation used to perform Gaussian smoothing of the images. Defaults to None
-        threadsperblock (npt.ArrayLike[float, float, float]): Defines the number of cuda threads. Defaults to (8, 8, 8)
+        threadsperblock (typing.Tuple[int, int, int]): Defines the number of cuda threads. Defaults to (8, 8, 8)
         
     Returns:
         vx (cuda array): Displacement in x direction

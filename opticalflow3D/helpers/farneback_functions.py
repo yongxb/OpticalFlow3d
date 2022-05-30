@@ -1,4 +1,5 @@
 import math
+import typing
 
 import numpy as np
 from numba import cuda
@@ -6,7 +7,6 @@ import cupy as cp
 from cupyx.scipy import ndimage
 import cupyx
 from opticalflow3D.helpers.helpers import imresize_3d, gaussian_pyramid_3d
-import numpy.typing as npt
 
 
 # TODO update typing when cupy v11 is out
@@ -424,7 +424,7 @@ def update_flow(h0, h1, h2, g00, g01, g02, g11, g12, g22,
 def farneback_3d(image1, image2, iters: int, num_levels: int,
                  scale: float = 0.5, spatial_size: int = 9, sigma_k: float = 0.15,
                  filter_type: str = "box", filter_size: int = 5,
-                 presmoothing: int = None, threadsperblock: npt.ArrayLike[float, float, float] = (8, 8, 8)):
+                 presmoothing: int = None, threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8)):
     """ Estimates the displacement across image1 and image2 using the 3D Farneback two frame algorithm
 
     Args:
@@ -440,7 +440,7 @@ def farneback_3d(image1, image2, iters: int, num_levels: int,
         filter_type (int): Defines the type of filter used to average the calculated matrices. Defaults to "box"
         filter_size (int): Size of the filter used to average the matrices. Defaults to 5
         presmoothing (int): Standard deviation used to perform Gaussian smoothing of the images. Defaults to None
-        threadsperblock (npt.ArrayLike[float, float, float]): Defines the number of cuda threads. Defaults to (8, 8, 8)
+        threadsperblock (typing.Tuple[int, int, int]): Defines the number of cuda threads. Defaults to (8, 8, 8)
 
     Returns:
         vx (cuda array): array containing the displacements in the x direction

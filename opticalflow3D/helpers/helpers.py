@@ -1,5 +1,5 @@
 import typing
-from typing import Tuple, List, Union, Any
+from typing import Tuple, List
 
 import numpy.typing as npt
 import skimage.io
@@ -12,7 +12,7 @@ from numba import njit, prange
 import scipy.ndimage
 
 
-def gaussian_kernel_1d(sigma: float, radius: int = None) -> np.ArrayLike:
+def gaussian_kernel_1d(sigma: float, radius: int = None) -> npt.ArrayLike:
     """ Generates a 1d kernel that can be used to perform Gaussian smoothing
 
     Args:
@@ -42,7 +42,7 @@ def gaussian_pyramid_3d(image, sigma: float = 1, scale: float = 0.5) -> typing.T
 
     Returns:
         resized_image (ndarray): Downscaled image
-        true_scale (npt.ArrayLike[float, float, float]): Actual scaling factor used. This differs slightly from the input
+        true_scale (typing.Tuple[float, float, float]): Actual scaling factor used. This differs slightly from the input
             scaling factor in cases when the factor used causes the size of the image to not be an integer.
     """
     kernel = cp.asarray(gaussian_kernel_1d(sigma), dtype=cp.float32)
@@ -65,12 +65,12 @@ def gaussian_pyramid_3d(image, sigma: float = 1, scale: float = 0.5) -> typing.T
     return resized_image, true_scale
 
 
-def imresize_3d(image, scale: npt.ArrayLike[float, float, float] = (0.5, 0.5, 0.5)) -> np.ndarray:
+def imresize_3d(image, scale: typing.Tuple[float, float, float] = (0.5, 0.5, 0.5)) -> np.ndarray:
     """ Upscales the image by the specified factor
 
     Args:
         image (cuda array): image to generate pyramids from
-        scale (npt.ArrayLike[float, float, float]): Scale factor used to downscale the image. Actual factor used is 1/scale.
+        scale (typing.Tuple[float, float, float]): Scale factor used to downscale the image. Actual factor used is 1/scale.
             Defaults to (0.5, 0.5, 0.5).
 
     Returns:

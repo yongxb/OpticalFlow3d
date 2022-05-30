@@ -7,7 +7,6 @@ from tqdm import tqdm
 from .helpers.farneback_functions import farneback_3d
 from .helpers.helpers import get_positions
 from .helpers.pyrlk_functions import pyrlk_3d
-import numpy.typing as npt
 
 
 class Farneback3D:
@@ -54,7 +53,7 @@ class Farneback3D:
                        total_vol: typing.Tuple[int, int, int] = (-1, -1, -1),
                        sub_volume: typing.Tuple[int, int, int] = (256, 256, 256),
                        overlap: typing.Tuple[int, int, int] = (64, 64, 64),
-                       threadsperblock: npt.ArrayLike[float, float, float] = (8, 8, 8),
+                       threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8),
                        ):
         """ Calculates the displacement across image1 and image2 using the 3D Farneback two frame algorithm
 
@@ -68,7 +67,7 @@ class Farneback3D:
                 Defaults to (256, 256, 256)
             overlap (typing.Tuple[int, int, int]): amount of overlap between adjacent subvolumes.
                 Defaults to (64, 64, 64)
-            threadsperblock (npt.ArrayLike[float, float, float]): Defines the number of cuda threads.
+            threadsperblock (typing.Tuple[int, int, int]): Defines the number of cuda threads.
                 Defaults to (8, 8, 8)
 
         Returns:
@@ -217,7 +216,7 @@ class PyrLK3D:
                        total_vol: typing.Tuple[int, int, int] = (-1, -1, -1),
                        sub_volume: typing.Tuple[int, int, int] = (256, 256, 256),
                        overlap: typing.Tuple[int, int, int] = (64, 64, 64),
-                       threadsperblock: npt.ArrayLike[float, float, float] = (8, 8, 8),
+                       threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8),
                        ):
         """ Calculates the displacement across image1 and image2 using the 3D Pyramidal Lucas Kanade algorithm
 
@@ -231,7 +230,7 @@ class PyrLK3D:
                 Defaults to (256, 256, 256)
             overlap (typing.Tuple[int, int, int]): amount of overlap between adjacent subvolumes.
                 Defaults to (64, 64, 64)
-            threadsperblock (npt.ArrayLike[float, float, float]): Defines the number of cuda threads.
+            threadsperblock (typing.Tuple[int, int, int]): Defines the number of cuda threads.
                 Defaults to (8, 8, 8)
 
         Returns:
