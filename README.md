@@ -55,6 +55,13 @@ This package is available via pip and can be installed using:
 pip install opticalflow3d
 ```
 
+Please also ensure that a compatible cudatoolkit version is installed alongside the cupy package. As the default 
+cupy package (cupy-cuda113) relies on cudatoolkit v11.3.1, this needs to be installed as well using conda:
+
+```
+conda install -c conda-forge cudatoolkit==11.3.1
+```
+
 ### Examples
 Examples can be found in the examples folder
 

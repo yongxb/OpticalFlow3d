@@ -4,3 +4,4 @@ scikit-image>=0.17.1
 scipy>=1.6.3
 tqdm>=4.50.0
 cupy-cuda113>=10.0.0
+cudatoolkit==11.3.1
