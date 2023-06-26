@@ -50,7 +50,7 @@ class Farneback3D:
 
     def calculate_flow(self, image1: np.ndarray, image2: np.ndarray,
                        start_point: typing.Tuple[int, int, int] = (0, 0, 0),
-                       total_vol: typing.Tuple[int, int, int] = (-1, -1, -1),
+                       total_vol: typing.Optional[typing.Tuple[int, int, int]] = None,
                        sub_volume: typing.Tuple[int, int, int] = (256, 256, 256),
                        overlap: typing.Tuple[int, int, int] = (64, 64, 64),
                        threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8),
@@ -62,7 +62,7 @@ class Farneback3D:
             image2 (np.ndarray): second image
             start_point (typing.Tuple[int, int, int]): starting position of the region of interest in the image volume.
                 Defaults to (0, 0, 0)
-            total_vol (typing.Tuple[int, int, int]): total size of the region of interest. Defaults to (-1, -1, -1)
+            total_vol (typing.Optional[typing.Tuple[int, int, int]]): total size of the region of interest. Defaults to None
             sub_volume (typing.Tuple[int, int, int]): maximum volume size that can be analysed at one go.
                 Defaults to (256, 256, 256)
             overlap (typing.Tuple[int, int, int]): amount of overlap between adjacent subvolumes.
@@ -213,7 +213,7 @@ class PyrLK3D:
 
     def calculate_flow(self, image1: np.ndarray, image2: np.ndarray,
                        start_point: typing.Tuple[int, int, int] = (0, 0, 0),
-                       total_vol: typing.Tuple[int, int, int] = (-1, -1, -1),
+                       total_vol: typing.Optional[typing.Tuple[int, int, int]] = None,
                        sub_volume: typing.Tuple[int, int, int] = (256, 256, 256),
                        overlap: typing.Tuple[int, int, int] = (64, 64, 64),
                        threadsperblock: typing.Tuple[int, int, int] = (8, 8, 8),
@@ -225,7 +225,7 @@ class PyrLK3D:
             image2 (np.ndarray): second image
             start_point (typing.Tuple[int, int, int]): starting position of the region of interest in the image volume.
                 Defaults to (0, 0, 0)
-            total_vol (typing.Tuple[int, int, int]): total size of the region of interest. Defaults to (-1, -1, -1)
+            total_vol (typing.Optional[typing.Tuple[int, int, int]]): total size of the region of interest. Defaults to None
             sub_volume (typing.Tuple[int, int, int]): maximum volume size that can be analysed at one go.
                 Defaults to (256, 256, 256)
             overlap (typing.Tuple[int, int, int]): amount of overlap between adjacent subvolumes.
